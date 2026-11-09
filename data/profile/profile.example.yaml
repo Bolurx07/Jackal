@@ -1,0 +1,54 @@
+# EXAMPLE ONLY. The real file is data/profile/profile.yaml, built from your CVs.
+# This file is the fact bank: Jackal may only use what is written here.
+
+basics:
+  name: Your Name
+  email: you@example.com
+  location: Lagos, Nigeria
+  links:
+    github: https://github.com/you
+    portfolio: https://you.dev
+  yearsOfExperience: 4
+  workAuthorization: Nigerian citizen; needs sponsorship for onsite roles abroad
+
+skills: [React, TypeScript, JavaScript, Next.js, Tailwind CSS, Node.js, PostgreSQL, REST APIs]
+
+experience:
+  - id: exp-acme
+    company: Acme Ltd
+    title: Frontend Developer
+    location: Lagos (hybrid)
+    start: 2023-01
+    bullets:
+      - id: acme-1
+        text: Built the customer dashboard in React and TypeScript used by 20k monthly users.
+        tags: [react, typescript, dashboard]
+      - id: acme-2
+        text: Cut page load time by 40% by code-splitting and image optimization.
+        tags: [performance]
+
+projects:
+  - id: proj-clinic
+    name: Clinic Booking
+    stack: [Next.js, PostgreSQL]
+    bullets:
+      - id: clinic-1
+        text: Appointment booking app with availability calendar and reminders.
+        tags: [nextjs, fullstack]
+
+education:
+  - institution: University of Lagos
+    qualification: B.Sc. Computer Science
+    year: "2020"
+
+certifications: []
+
+# One entry per role-specific CV you already have.
+cvs:
+  - id: frontend
+    label: Frontend Developer CV
+    headline: Frontend Developer (React, TypeScript)
+    summary: Frontend developer focused on fast, accessible React apps.
+    skills: [React, TypeScript, Next.js, Tailwind CSS]
+    experienceIds: [exp-acme]
+    projectIds: [proj-clinic]

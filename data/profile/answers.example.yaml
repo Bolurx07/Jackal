@@ -1,0 +1,7 @@
+# EXAMPLE ONLY. Your real answers live in data/profile/answers.yaml (kept out of git).
+# Leave an answer empty ("") if you'd rather decide per job: the queue will flag it.
+
+answers:
+  - key: work_authorization
+    question: Are you legally authorized to work in your country of residence?
+    answer: "Yes"
