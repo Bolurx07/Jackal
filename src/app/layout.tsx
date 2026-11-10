@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { BottomNav, MobileTopBar, Sidebar } from "@/components/nav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,30 +18,29 @@ export const metadata: Metadata = {
   description: "Personal job search agent",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
-        <nav className="print:hidden border-b border-zinc-200 dark:border-zinc-800">
-          <div className="mx-auto flex w-full max-w-5xl items-center gap-5 px-4 py-3 text-sm">
-            <Link href="/" className="font-semibold">
-              Jackal
-            </Link>
-            <Link href="/" className="text-zinc-600 hover:text-foreground dark:text-zinc-400">
-              Jobs
-            </Link>
-            <Link href="/applications" className="text-zinc-600 hover:text-foreground dark:text-zinc-400">
-              Applications
-            </Link>
-            <Link href="/inbox" className="text-zinc-600 hover:text-foreground dark:text-zinc-400">
-              Inbox
-            </Link>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="min-h-full">
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <MobileTopBar />
+            {/* Bottom padding leaves room for the phone tab bar */}
+            <div className="flex-1 pb-24 md:pb-10 print:p-0">{children}</div>
           </div>
-        </nav>
-        {children}
+        </div>
+        <BottomNav />
       </body>
     </html>
   );

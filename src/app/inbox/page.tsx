@@ -1,19 +1,25 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { desc, eq } from "drizzle-orm";
+import { ChevronRight, Inbox as InboxIcon, Lock } from "lucide-react";
 import { db } from "@/db";
 import { appState, applications, emailEvents, jobs } from "@/db/schema";
 import { OutcomeBadge } from "@/components/outcome-badge";
+import { EmptyState, PageHeader, cx, pageClass, timeAgo } from "@/components/ui";
 
 export default function InboxPage() {
   return (
-    <Suspense fallback={<main className="mx-auto w-full max-w-5xl px-4 py-8 text-zinc-500">Loading…</main>}>
+    <Suspense fallback={<main className={cx(pageClass, "text-muted")}>Loading…</main>}>
       <Inbox />
     </Suspense>
   );
 }
 
 async function Inbox() {
+  await connection(); // render per request (shows live times)
+  const now = new Date();
+  const gmailOn = !!(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
   const [last] = await db.select().from(appState).where(eq(appState.key, "email_last_sync"));
   const rows = await db
     .select({ e: emailEvents, appId: applications.id, title: jobs.title, company: jobs.company })
@@ -24,48 +30,69 @@ async function Inbox() {
     .limit(150);
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-8">
-      <h1 className="mb-1 text-2xl font-semibold">Inbox</h1>
-      <p className="mb-6 text-sm text-zinc-500">
-        Job-related emails Jackal recognised in your Gmail (read-only).{" "}
-        {last ? `Last checked ${new Date(last.value).toLocaleString()}.` : "Not checked yet: set up Gmail and run npm run jackal:run."}
-      </p>
+    <main className={pageClass}>
+      <PageHeader
+        title="Inbox"
+        description={
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <Lock className="size-3.5" aria-hidden />
+            Job-related emails from your Gmail, read-only.
+            {last ? ` Last checked ${timeAgo(new Date(last.value), now)}.` : ""}
+          </span>
+        }
+      />
 
-      {rows.length === 0 && <p className="text-zinc-500">No job emails recognised yet.</p>}
+      {!gmailOn && (
+        <div className="mb-5 rounded-xl border border-primary/30 bg-primary-soft px-4 py-3 text-sm text-accent">
+          Gmail isn&apos;t connected yet. Add your app password to <code className="font-mono text-[13px]">GMAIL_APP_PASSWORD</code> in{" "}
+          <code className="font-mono text-[13px]">.env.local</code>, then check with <code className="font-mono text-[13px]">npm run jackal:inbox</code>.
+        </div>
+      )}
 
-      <ul className="flex flex-col gap-3">
-        {rows.map(({ e, appId, title, company }) => (
-          <li
-            key={e.id}
-            className={`rounded-lg border p-4 ${
-              !appId && e.kind !== "job_alert" ? "border-amber-300 dark:border-amber-800" : "border-zinc-200 dark:border-zinc-800"
-            }`}
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="flex flex-wrap items-baseline gap-2">
-                <OutcomeBadge outcome={e.kind} />
-                <span className="font-medium">{e.subject}</span>
-              </span>
-              <span className="text-xs text-zinc-500">{e.receivedAt.toLocaleString()}</span>
-            </div>
-            <p className="text-sm text-zinc-500">From {e.fromName ? `${e.fromName} <${e.fromAddress}>` : e.fromAddress}</p>
-            <p className="mt-1 text-sm">{e.snippet}</p>
-            <p className="mt-1 text-sm">
-              {e.kind === "job_alert" ? (
-                `${e.jobsAdded} job(s) added to the Jobs page`
-              ) : appId ? (
-                <Link href={`/applications/${appId}`} className="underline">
-                  {title} at {company}
-                </Link>
-              ) : (
-                <span className="text-amber-700 dark:text-amber-400">
-                  Didn&apos;t match any application you&apos;ve approved or submitted. Update it by hand if it&apos;s yours.
-                </span>
-              )}
-            </p>
-          </li>
-        ))}
-      </ul>
+      {rows.length === 0 ? (
+        <EmptyState icon={<InboxIcon className="size-6" />} title="No job emails yet">
+          Confirmations, interview invites, rejections, offers and job alerts appear here after each daily search.
+        </EmptyState>
+      ) : (
+        <ul className="overflow-hidden rounded-xl border border-line bg-surface">
+          {rows.map(({ e, appId, title, company }) => {
+            const unmatched = !appId && e.kind !== "job_alert";
+            const body = (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <OutcomeBadge outcome={e.kind} />
+                    <span className="truncate text-sm font-medium">{e.subject}</span>
+                  </p>
+                  <p className="mt-0.5 truncate text-[13px] text-muted">
+                    {e.fromName || e.fromAddress} · {timeAgo(e.receivedAt, now)}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[13px] text-foreground/80">{e.snippet}</p>
+                  <p className={cx("mt-1.5 text-[13px]", unmatched ? "text-warning" : "text-muted")}>
+                    {e.kind === "job_alert"
+                      ? `${e.jobsAdded} job${e.jobsAdded === 1 ? "" : "s"} added to Jobs`
+                      : appId
+                        ? `${title} at ${company}`
+                        : "Didn't match an application you approved or submitted. Update it by hand if it's yours."}
+                  </p>
+                </div>
+                {appId && <ChevronRight className="size-4 shrink-0 self-center text-muted" aria-hidden />}
+              </>
+            );
+            return (
+              <li key={e.id} className={cx("border-b border-line last:border-b-0", unmatched && "bg-warning-soft/40")}>
+                {appId ? (
+                  <Link href={`/applications/${appId}`} className="flex gap-3 px-4 py-3.5 transition-colors hover:bg-subtle sm:px-5">
+                    {body}
+                  </Link>
+                ) : (
+                  <div className="flex gap-3 px-4 py-3.5 sm:px-5">{body}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </main>
   );
 }

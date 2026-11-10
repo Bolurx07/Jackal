@@ -24,7 +24,7 @@ export function CvView({ cv, highlightSkills = [] }: { cv: CvDocument; highlight
           {cv.skills.map((s, i) => (
             <span key={s}>
               {i > 0 && " • "}
-              <span className={added.has(s.toLowerCase()) ? "cv-added rounded bg-green-100 px-0.5 dark:bg-green-900" : ""}>{s}</span>
+              <span className={added.has(s.toLowerCase()) ? "cv-added rounded bg-success-soft px-0.5 text-success" : ""}>{s}</span>
             </span>
           ))}
         </p>

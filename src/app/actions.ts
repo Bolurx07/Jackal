@@ -7,11 +7,11 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync } from "node:fs";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { applications } from "@/db/schema";
+import { applications, runs } from "@/db/schema";
 import { prepareApplication } from "@/lib/applications";
 import { FOLLOW_UP_DAYS } from "@/lib/constants";
 
@@ -61,6 +61,29 @@ export async function launchApplyAction(formData: FormData) {
   refresh();
 }
 
+/** Start a job search now (same as the daily run). Skips if one is already running. */
+export async function runSearchAction() {
+  const [latest] = await db.select().from(runs).orderBy(desc(runs.id)).limit(1);
+  const running = latest && !latest.finishedAt && Date.now() - latest.startedAt.getTime() < 20 * 60_000;
+  if (running) return;
+
+  const root = process.cwd();
+  const logDir = path.join(root, "data", "logs");
+  mkdirSync(logDir, { recursive: true });
+  const out = openSync(path.join(logDir, "daily.log"), "a");
+  const tsxCli = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
+  const child = spawn(process.execPath, [tsxCli, path.join(root, "scripts", "run-daily.ts")], {
+    cwd: root,
+    detached: true,
+    stdio: ["ignore", out, out],
+    windowsHide: true,
+  });
+  child.unref();
+  // Give the run a moment to register, so the page shows it as running
+  await new Promise((r) => setTimeout(r, 2500));
+  refresh();
+}
+
 /** For when you applied but Jackal didn't see the confirmation (or you applied elsewhere). */
 export async function markSubmittedAction(formData: FormData) {
   const id = idFrom(formData, "applicationId");
@@ -94,10 +117,11 @@ export async function setOutcomeAction(formData: FormData) {
   refresh();
 }
 
-/** Follow-up reminder: "done" clears it, "later" pushes it a week. */
-export async function followUpAction(formData: FormData) {
+// Each button gets its own action. (A button that sends a server action can't also send its own
+// name/value: React replaces the button's name with the action's ID.)
+
+async function setFollowUp(formData: FormData, later: boolean) {
   const id = idFrom(formData, "applicationId");
-  const later = formData.get("action") === "later";
   await db
     .update(applications)
     .set({ followUpAt: later ? new Date(Date.now() + 7 * 86_400_000) : null, updatedAt: new Date() })
@@ -105,12 +129,30 @@ export async function followUpAction(formData: FormData) {
   refresh();
 }
 
-export async function decideAction(formData: FormData) {
+/** Follow-up done: clears the reminder. */
+export async function followUpDoneAction(formData: FormData) {
+  await setFollowUp(formData, false);
+}
+
+/** Follow-up later: pushes the reminder a week. */
+export async function followUpLaterAction(formData: FormData) {
+  await setFollowUp(formData, true);
+}
+
+export async function approveAction(formData: FormData) {
+  await decide(formData, "approved");
+}
+
+export async function rejectAction(formData: FormData) {
+  await decide(formData, "rejected");
+}
+
+export async function backToReviewAction(formData: FormData) {
+  await decide(formData, "awaiting_approval");
+}
+
+async function decide(formData: FormData, decision: "approved" | "rejected" | "awaiting_approval") {
   const id = idFrom(formData, "applicationId");
-  const decision = formData.get("decision");
-  if (decision !== "approved" && decision !== "rejected" && decision !== "awaiting_approval") {
-    throw new Error("Invalid decision");
-  }
   const coverLetter = formData.get("coverLetter");
   const note = String(formData.get("note") ?? "").trim() || null;
   await db
