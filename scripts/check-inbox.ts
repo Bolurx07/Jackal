@@ -5,12 +5,16 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 async function main() {
-  const { emailConfigured, syncInbox } = await import("../src/lib/email/sync");
+  const { gmailStatus } = await import("../src/lib/email/config");
+  const { syncInbox } = await import("../src/lib/email/sync");
   const { closeDb } = await import("../src/db");
-  if (!emailConfigured()) {
-    console.log("Gmail isn't set up. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env.local (see README).");
+
+  const status = gmailStatus();
+  if (!status.ready) {
+    console.log(status.problem);
     return;
   }
+  console.log(`Using ${status.provider === "api" ? "the Gmail API (read-only OAuth)" : "IMAP (app password)"}${status.account ? ` for ${status.account}` : ""}.`);
   try {
     const r = await syncInbox({ dryRun: true });
     console.log(`Checked ${r.checked} recent emails; ${r.recognised} job-related; ${r.matched} match an application.`);
@@ -28,6 +32,6 @@ async function main() {
 
 main().catch((e) => {
   const msg = (e as Error).message;
-  console.error(/auth|credentials|invalid/i.test(msg) ? `Gmail login failed: ${msg}\nCheck GMAIL_USER and the app password.` : msg);
+  console.error(/auth|credentials|invalid login/i.test(msg) && !/jackal:gmail-auth/.test(msg) ? `Gmail login failed: ${msg}` : msg);
   process.exit(1);
 });

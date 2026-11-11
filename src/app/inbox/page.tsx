@@ -6,6 +6,7 @@ import { ChevronRight, Inbox as InboxIcon, Lock } from "lucide-react";
 import { db } from "@/db";
 import { appState, applications, emailEvents, jobs } from "@/db/schema";
 import { OutcomeBadge } from "@/components/outcome-badge";
+import { gmailStatus } from "@/lib/email/config";
 import { EmptyState, PageHeader, cx, pageClass, timeAgo } from "@/components/ui";
 
 export default function InboxPage() {
@@ -19,7 +20,7 @@ export default function InboxPage() {
 async function Inbox() {
   await connection(); // render per request (shows live times)
   const now = new Date();
-  const gmailOn = !!(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
+  const gmail = gmailStatus();
   const [last] = await db.select().from(appState).where(eq(appState.key, "email_last_sync"));
   const rows = await db
     .select({ e: emailEvents, appId: applications.id, title: jobs.title, company: jobs.company })
@@ -36,16 +37,16 @@ async function Inbox() {
         description={
           <span className="inline-flex flex-wrap items-center gap-1.5">
             <Lock className="size-3.5" aria-hidden />
-            Job-related emails from your Gmail, read-only.
+            Job-related emails from your Gmail, read-only
+            {gmail.ready && ` via ${gmail.provider === "api" ? "the Gmail API" : "IMAP"}${gmail.account ? ` (${gmail.account})` : ""}`}.
             {last ? ` Last checked ${timeAgo(new Date(last.value), now)}.` : ""}
           </span>
         }
       />
 
-      {!gmailOn && (
+      {!gmail.ready && (
         <div className="mb-5 rounded-xl border border-primary/30 bg-primary-soft px-4 py-3 text-sm text-accent">
-          Gmail isn&apos;t connected yet. Add your app password to <code className="font-mono text-[13px]">GMAIL_APP_PASSWORD</code> in{" "}
-          <code className="font-mono text-[13px]">.env.local</code>, then check with <code className="font-mono text-[13px]">npm run jackal:inbox</code>.
+          {gmail.problem} Setup steps are in the README under &ldquo;Gmail setup&rdquo;.
         </div>
       )}
 

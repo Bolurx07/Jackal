@@ -9,26 +9,52 @@ follow-up reminders appear 10 days after applying with no reply.
 
 ## Gmail setup (Phase 4, optional)
 
-Jackal reads Gmail **read-only** over IMAP: nothing is marked read, moved, deleted or sent.
-It only downloads emails whose sender or subject look job-related, and keeps just the sender,
-subject, date and a 300-character snippet.
+Jackal reads Gmail **read-only**: nothing is marked read, moved, deleted or sent. It keeps just
+the sender, subject, date and a 300-character snippet of job-related emails.
 
-1. Turn on **2-Step Verification** for your Google account (Security settings).
-2. Go to https://myaccount.google.com/apppasswords, create an app password named "Jackal",
-   and copy the 16-letter password.
-3. Add to `.env.local` yourself:
+**Recommended: Gmail API with read-only OAuth** (`GMAIL_PROVIDER=api`). Jackal gets the
+`gmail.readonly` permission only: it can't send, delete or change anything. Gmail searches on its
+side, so Jackal only looks at job-related emails. No password is stored: only a sign-in token in
+`data/secrets/gmail-token.json` (kept out of git), which you can revoke any time.
+
+One-time setup in Google Cloud Console (https://console.cloud.google.com), ~15 minutes:
+1. Create a project named **Jackal**.
+2. **APIs & Services → Library**: search **Gmail API** → **Enable**.
+3. **Google Auth Platform** (OAuth consent screen) → **Get started**: app name *Jackal*, your
+   email as support/contact email, **Audience: External** → Create.
+4. **Audience → Test users → Add users**: add the Gmail address Jackal should read.
+5. **Clients → Create client → Application type: Desktop app**, name *Jackal* → Create.
+   Copy the **Client ID** and **Client secret** into `.env.local` yourself:
    ```
-   GMAIL_USER=you@gmail.com
-   GMAIL_APP_PASSWORD=the16letterpassword
+   GMAIL_PROVIDER=api
+   GMAIL_OAUTH_CLIENT_ID=...
+   GMAIL_OAUTH_CLIENT_SECRET=...
    ```
-4. Preview what Jackal sees (changes nothing): `npm run jackal:inbox`
-5. From then on, every `npm run jackal:run` checks the inbox first. See the results on the **Inbox** page.
+6. Sign in once: `npm run jackal:gmail-auth`. Your browser opens; pick your account. Google
+   warns the app isn't verified (it's your own app) → **Continue** → allow **read your email**.
+7. Preview what Jackal sees (changes nothing): `npm run jackal:inbox`
+8. From then on, every daily run checks the inbox first. See the results on the **Inbox** page.
+
+**Weekly re-sign-in while the app is in "Testing":** Google expires sign-ins of apps in Testing
+status after 7 days. When that happens, the daily log and the Overview say so; run
+`npm run jackal:gmail-auth` again. (Publishing the app avoids this, but Google may require
+verification for Gmail read access, so Testing is the simple choice for a personal tool.)
+
+To disconnect: remove *Jackal* at https://myaccount.google.com/connections and delete
+`data/secrets/gmail-token.json`.
+
+**Fallback: IMAP with an app password** (`GMAIL_PROVIDER=imap`, plus `GMAIL_USER` and
+`GMAIL_APP_PASSWORD`). An app password gives full mailbox access (Jackal itself only reads), and
+antivirus mail scanning (e.g. Avast Mail Shield) can block it. Prefer the API.
+
+**Certificates:** Jackal never turns off TLS certificate checking. On this PC Avast scans HTTPS
+(including the Gmail API) using its own root certificate, which Windows trusts; Avast checks
+Google's real certificate first. Never trust Avast's "Untrusted Root" or set
+`NODE_TLS_REJECT_UNAUTHORIZED=0`.
 
 To get LinkedIn/Indeed jobs without scraping, create job alerts on those sites and send them to
 this Gmail. Jackal adds the jobs (scored on title only). It never fills forms on LinkedIn or Indeed
 itself: click "Apply on company site" there, and Jackal fills the company's form.
-
-You can revoke access any time by deleting the app password.
 
 ## Submitting (Phase 3)
 

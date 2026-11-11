@@ -46,6 +46,9 @@ export function titleFilter(job: NormalizedJob): FilterResult {
   if (anyMatch(p.excludeTitlePatterns, job.title)) {
     return { pass: false, reason: "Title matches an excluded pattern" };
   }
+  if (anyMatch(p.nonTechTitlePatterns, job.title) && !p.techTitleWords.test(job.title)) {
+    return { pass: false, reason: "Retail/hospitality role, not tech" };
+  }
   return { pass: true };
 }
 

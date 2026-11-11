@@ -27,6 +27,17 @@ export const preferences = {
     /\b(data|search|content|ai) (rater|evaluator)\b/i,
   ],
 
+  /**
+   * Retail and hospitality roles that share words with tech titles ("Front End Supervisor" at a
+   * supermarket, "Front Office Supervisor" at a hotel). Dropped unless the title is clearly tech.
+   */
+  nonTechTitlePatterns: [
+    /\bfront[\s-]?(end|office|desk|of house)\b/i,
+    /\b(shift|store|floor|team|crew|cashier|service) (lead|leader|supervisor|coach|manager|associate|member)\b/i,
+    /\b(cashier|barista|retail|hotel|restaurant|housekeeping|concierge|merchandis)/i,
+  ],
+  techTitleWords: /(engineer|develop|software|programm|\bweb\b|\bui\b|\bux\b|react|angular|vue|javascript|typescript|next\.?js|wordpress|full[\s-]?stack|front[\s-]?end (dev|eng|web|team lead))/i,
+
   /** Search terms for Himalayas (remote jobs open to candidates in Nigeria). */
   himalayasQueries: [
     "frontend developer",

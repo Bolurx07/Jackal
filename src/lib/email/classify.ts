@@ -26,7 +26,7 @@ const SOFT_REJECTION = /unfortunately[^.]{0,160}(application|candidacy|position|
 const INTERVIEW_STRONG =
   /invit(e|ing) you (to|for) (an?|the|your) (first |initial |next |technical |final )?(interview|call|conversation|chat)|schedule (an?|your|the) (interview|call|phone screen|video call|chat)|book (a|your) (time|slot|interview)|calendly\.com|interview (invitation|invite|request)|like to (speak|chat|talk|meet) with you|next round|phone screen/i;
 const ASSESSMENT =
-  /take[\s-]?home|coding (challenge|test|assessment|exercise)|technical (assessment|test|challenge|exercise)|hackerrank|codility|testgorilla|codesignal|coderbyte|assessment (link|invitation|invite)|complete (the|this|an|our|a short) (assessment|test|task|quiz)|skills? (test|assessment)/i;
+  /through to the (assessment|test|next stage)|invited to (take|complete) (an?|the|our)|take[\s-]?home|coding (challenge|test|assessment|exercise)|technical (assessment|test|challenge|exercise)|hackerrank|codility|testgorilla|codesignal|coderbyte|assessment (link|invitation|invite)|complete (the|this|an|our|a short) (assessment|test|task|quiz)|skills? (test|assessment)/i;
 const CONFIRMATION =
   /thank(s| you) for (applying|your application|your interest in)|application (has been |was |is )?(successfully )?(received|submitted)|we('ve| have) received your application|received your application|your application (to|for) .{0,80} (has been|was) (received|submitted)/i;
 

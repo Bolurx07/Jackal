@@ -19,6 +19,7 @@ import { db } from "@/db";
 import { applications, emailEvents, jobs, jobScores, runs } from "@/db/schema";
 import { runSearchAction } from "@/app/actions";
 import { loadAnswers } from "@/lib/answers";
+import { gmailStatus } from "@/lib/email/config";
 import { SubmitButton } from "@/components/submit-button";
 import { AppStatusBadge, Card, Dot, EmptyState, Meta, PageHeader, Score, buttonClass, cx, pageClass, timeAgo } from "@/components/ui";
 
@@ -111,7 +112,7 @@ async function Overview() {
   const lastRun = recentRuns[0];
   const running = !!lastRun && !lastRun.finishedAt && now.getTime() - lastRun.startedAt.getTime() < 20 * 60_000;
   const blankAnswers = loadAnswers().filter((a) => a.answer === null);
-  const gmailOn = !!(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
+  const gmail = gmailStatus();
 
   // --- Needs attention
   const attention: { text: string; href?: string; tone: "warning" | "danger" | "primary" }[] = [];
@@ -125,7 +126,7 @@ async function Overview() {
       tone: "warning",
     });
   if (lastRun?.errors.length) attention.push({ text: `Last search had ${lastRun.errors.length} error${lastRun.errors.length === 1 ? "" : "s"}`, tone: "danger" });
-  if (!gmailOn) attention.push({ text: "Gmail isn't connected, so replies and job alerts aren't tracked. Add the app password to .env.local", tone: "primary" });
+  if (!gmail.ready) attention.push({ text: gmail.problem ?? "Gmail isn't connected.", href: "/inbox", tone: "primary" });
 
   // --- Activity timeline
   const activity: Activity[] = [

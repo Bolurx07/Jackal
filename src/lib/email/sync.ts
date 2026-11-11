@@ -1,27 +1,95 @@
-// Read-only Gmail check over IMAP.
+// Read-only Gmail check.
 //
-// - The mailbox is opened read-only: nothing is marked read, moved, deleted or sent.
-// - Only sender + subject are read for every recent email; the full email is downloaded only
-//   when those look job-related.
-// - Jackal stores sender, subject, date and a 300-character snippet for emails it recognises.
-//
-// Setup: GMAIL_USER and GMAIL_APP_PASSWORD in .env.local (see README).
+// Two interchangeable sources (GMAIL_PROVIDER in .env.local):
+//   api  (default) Gmail API with the gmail.readonly OAuth scope. Gmail searches on its side,
+//        so only job-related emails are looked at.
+//   imap (fallback) IMAP with an app password; the mailbox is opened read-only.
+// Either way: nothing is marked read, moved, deleted or sent; the full email is downloaded only
+// when sender + subject look job-related; Jackal stores sender, subject, date and a 300-character
+// snippet for emails it recognises. TLS certificate checking is always Node's default (on).
 
-import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { appState, applications, emailEvents, jobs } from "@/db/schema";
 import { ALERT_SENDERS, classifyEmail, maybeRelevant, type EmailKind } from "./classify";
 import { parseAlertEmail } from "./alerts";
+import { gmailStatus, type GmailProvider } from "./config";
 import type { NormalizedJob } from "../types";
 
 import { FOLLOW_UP_DAYS } from "../constants";
+
+/** One email as listed by a source, before its full content is downloaded. */
+interface MailRef {
+  ref: string; // IMAP uid or Gmail message id
+  fromAddress: string;
+  subject: string;
+  messageId: string | null;
+}
+
+/** Where emails come from. Both implementations are read-only. */
+interface MailSource {
+  list(since: Date, onChecked: () => void): AsyncIterable<MailRef>;
+  fetchRaw(ref: string): Promise<Buffer | null>;
+  close(): Promise<void>;
+}
+
+async function imapSource(): Promise<MailSource> {
+  const { ImapFlow } = await import("imapflow");
+  const client = new ImapFlow({
+    host: "imap.gmail.com",
+    port: 993,
+    secure: true, // TLS from the start; certificates are verified (no tls overrides)
+    // Google shows app passwords as "abcd efgh ijkl mnop"; spaces aren't part of it.
+    auth: { user: process.env.GMAIL_USER!.trim(), pass: process.env.GMAIL_APP_PASSWORD!.replace(/\s+/g, "") },
+    logger: false,
+  });
+  await client.connect();
+  await client.mailboxOpen("INBOX", { readOnly: true });
+  return {
+    async *list(since, onChecked) {
+      // Envelopes only (sender + subject); collect first, since IMAP can't fetch while listing
+      const refs: MailRef[] = [];
+      for await (const msg of client.fetch({ since }, { uid: true, envelope: true })) {
+        onChecked();
+        refs.push({
+          ref: String(msg.uid),
+          fromAddress: msg.envelope?.from?.[0]?.address ?? "",
+          subject: msg.envelope?.subject ?? "",
+          messageId: msg.envelope?.messageId ?? null,
+        });
+      }
+      yield* refs;
+    },
+    async fetchRaw(ref) {
+      const full = await client.fetchOne(ref, { source: true }, { uid: true });
+      return full && full.source ? full.source : null;
+    },
+    close: () => client.logout().catch(() => {}),
+  };
+}
+
+async function apiSource(): Promise<MailSource> {
+  const g = await import("./gmail-api");
+  const client = g.signedInClient();
+  return {
+    async *list(since, onChecked) {
+      for (const id of await g.listJobMessageIds(client, since)) {
+        onChecked();
+        const h = await g.getMessageHeaders(client, id);
+        yield { ref: id, ...h };
+      }
+    },
+    fetchRaw: (ref) => g.getRawMessage(client, ref),
+    close: async () => {},
+  };
+}
 
 const FIRST_SYNC_DAYS = 21;
 const STATE_KEY = "email_last_sync";
 
 export interface InboxReport {
+  provider: GmailProvider;
   checked: number;
   recognised: number;
   matched: number;
@@ -32,8 +100,9 @@ export interface InboxReport {
   errors: string[];
 }
 
+/** True when a Gmail connection is chosen (it may still need sign-in; the sync reports that). */
 export function emailConfigured(): boolean {
-  return !!(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
+  return gmailStatus().provider !== null;
 }
 
 const COMPANY_NOISE = /\b(inc|ltd|llc|limited|plc|gmbh|corp|corporation|co|company|technologies|technology|tech|labs?|group|holdings|global|systems?|software|solutions)\b\.?/g;
@@ -80,7 +149,20 @@ const OUTCOME: Partial<Record<EmailKind, string>> = {
 };
 
 export async function syncInbox(opts: { dryRun?: boolean } = {}): Promise<InboxReport> {
-  const report: InboxReport = { checked: 0, recognised: 0, matched: 0, outcomes: [], confirmations: 0, alertJobs: [], unmatched: 0, errors: [] };
+  const status = gmailStatus();
+  if (!status.provider) throw new Error("Gmail isn't set up (see README).");
+  if (!status.ready) throw new Error(status.problem ?? "Gmail isn't ready.");
+  const report: InboxReport = {
+    provider: status.provider,
+    checked: 0,
+    recognised: 0,
+    matched: 0,
+    outcomes: [],
+    confirmations: 0,
+    alertJobs: [],
+    unmatched: 0,
+    errors: [],
+  };
 
   const [state] = await db.select().from(appState).where(eq(appState.key, STATE_KEY));
   const since = state ? new Date(new Date(state.value).getTime() - 2 * 86_400_000) : new Date(Date.now() - FIRST_SYNC_DAYS * 86_400_000);
@@ -102,35 +184,25 @@ export async function syncInbox(opts: { dryRun?: boolean } = {}): Promise<InboxR
       .orderBy(desc(applications.updatedAt))
   ).map((r) => r);
 
-  const client = new ImapFlow({
-    host: "imap.gmail.com",
-    port: 993,
-    secure: true,
-    // Google shows app passwords as "abcd efgh ijkl mnop"; spaces aren't part of it.
-    auth: { user: process.env.GMAIL_USER!.trim(), pass: process.env.GMAIL_APP_PASSWORD!.replace(/\s+/g, "") },
-    logger: false,
-  });
-  await client.connect();
+  const source = status.provider === "api" ? await apiSource() : await imapSource();
   try {
-    await client.mailboxOpen("INBOX", { readOnly: true });
-
-    // 1. Envelopes only (sender + subject)
-    const wanted: { uid: number; fromAddress: string; subject: string }[] = [];
-    for await (const msg of client.fetch({ since }, { uid: true, envelope: true })) {
-      report.checked++;
-      const fromAddress = msg.envelope?.from?.[0]?.address ?? "";
-      const subject = msg.envelope?.subject ?? "";
-      if (maybeRelevant(fromAddress, subject)) wanted.push({ uid: msg.uid, fromAddress, subject });
+    // 1. Sender + subject only; keep the likely job-related ones
+    const wanted: MailRef[] = [];
+    for await (const m of source.list(since, () => report.checked++)) {
+      if (maybeRelevant(m.fromAddress, m.subject)) wanted.push(m);
     }
 
-    // Skip emails already processed
-    // 2. Full email only for likely-relevant ones
+    // 2. Full email only for likely-relevant ones not processed before
     for (const w of wanted) {
       try {
-        const full = await client.fetchOne(String(w.uid), { source: true }, { uid: true });
-        if (!full || !full.source) continue;
-        const parsed = await simpleParser(full.source);
-        const messageId = parsed.messageId ?? `uid-${w.uid}-${w.subject}`;
+        if (w.messageId) {
+          const [seen] = await db.select({ id: emailEvents.id }).from(emailEvents).where(eq(emailEvents.messageId, w.messageId));
+          if (seen) continue;
+        }
+        const raw = await source.fetchRaw(w.ref);
+        if (!raw) continue;
+        const parsed = await simpleParser(raw);
+        const messageId = parsed.messageId ?? w.messageId ?? `${status.provider}-${w.ref}-${w.subject}`;
         const [seen] = await db.select({ id: emailEvents.id }).from(emailEvents).where(eq(emailEvents.messageId, messageId));
         if (seen) continue;
 
@@ -176,7 +248,7 @@ export async function syncInbox(opts: { dryRun?: boolean } = {}): Promise<InboxR
       }
     }
   } finally {
-    await client.logout().catch(() => {});
+    await source.close();
   }
 
   if (!opts.dryRun) {

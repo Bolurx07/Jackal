@@ -16,12 +16,14 @@
     "jackal:apply": "tsx scripts/apply.ts",
     "jackal:test-filler": "tsx scripts/test-filler.ts",
     "jackal:inbox": "tsx scripts/check-inbox.ts",
-    "jackal:test-email": "tsx scripts/test-email.ts"
+    "jackal:test-email": "tsx scripts/test-email.ts",
+    "jackal:gmail-auth": "tsx scripts/gmail-auth.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
     "dotenv": "^18.0.10",
     "drizzle-orm": "^0.45.4",
+    "google-auth-library": "^11.3.4",
     "imapflow": "^2.11.0",
     "lucide-react": "^1.70.0",
     "mailparser": "^3.14.2",

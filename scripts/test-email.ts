@@ -2,6 +2,7 @@
 // Usage: npm run jackal:test-email
 import { classifyEmail, type EmailKind } from "../src/lib/email/classify";
 import { parseAlertEmail } from "../src/lib/email/alerts";
+import { locationFilter, titleFilter } from "../src/lib/filters";
 
 const CASES: { name: string; expect: EmailKind | null; from: string; subject: string; text: string }[] = [
   {
@@ -97,6 +98,61 @@ View job: https://www.linkedin.com/comm/jobs/view/4011112222/
 See all jobs: https://www.linkedin.com/comm/jobs/search/?keywords=frontend
 Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe`;
 
+// Same layout as real LinkedIn alert emails (Nov 2026): cards separated by dashes, badges after
+// the location, pay lines, and a second section with its own header. Links shortened.
+const LINKEDIN_REAL = [
+  "Your job alert for frontend developer in United States",
+  "New jobs match your preferences.",
+  "Manage alerts: https://www.linkedin.com/comm/jobs/alerts?x=1",
+  "",
+  "React Developer",
+  "TaskVerse",
+  "United States",
+  "View job: https://www.linkedin.com/comm/jobs/view/4488873861/?trackingId=a&refId=b",
+  "",
+  "---------------------------------------------------------",
+  "",
+  "Frontend Engineer",
+  "SMARTFOX",
+  "United States",
+  "Apply with resume & profile",
+  "View job: https://www.linkedin.com/comm/jobs/view/4487947381/?trackingId=c",
+  "",
+  "---------------------------------------------------------",
+  "",
+  "Junior Web Developer",
+  "RoleTalent Ltd",
+  "Greater Lincoln Area, United Kingdom",
+  "",
+  "£50K-£60K / year",
+  "This company is actively hiring",
+  "View job: https://www.linkedin.com/comm/jobs/view/4487000001/?trackingId=d",
+  "",
+  "---------------------------------------------------------",
+  "",
+  "See all jobs on LinkedIn: https://www.linkedin.com/comm/jobs/search-results/?k=1",
+  "",
+  "New jobs from your other alerts",
+  "",
+  '<strong class="font-bold">front end supervisor</strong> jobs in Europe',
+  "",
+  "Front Office Supervisor",
+  "Amstel Hotel",
+  "Amsterdam",
+  "",
+  "This company is actively hiring",
+  "Apply with resume & profile",
+  "View job: https://www.linkedin.com/comm/jobs/view/4487465498/?trackingId=e",
+  "",
+  "---------------------------------------------------------",
+  "",
+  "Shift Lead | Wellesley",
+  "Blank Street",
+  "Wellesley, MA",
+  "$21-$34 / hour",
+  "View job: https://www.linkedin.com/comm/jobs/view/4488893360/?trackingId=f",
+].join("\n");
+
 const INDEED_ALERT = `Data Annotator
 Welo Data - Remote
 https://ng.indeed.com/rc/clk?jk=abc123def456&from=ja&qd=xyz
@@ -132,6 +188,43 @@ const parseChecks: [string, boolean][] = [
   ["Indeed: 2 jobs", ind.length === 2],
   ["Indeed: company/location split", ind[0]?.company === "Welo Data" && ind[0]?.location === "Remote"],
 ];
+
+// Real LinkedIn layout
+const real = parseAlertEmail("linkedin_alert", LINKEDIN_REAL, now);
+console.log("LinkedIn (real layout) parsed:");
+for (const j of real) console.log(`  ${j.title} | ${j.company} | ${j.location}`);
+const want = [
+  ["React Developer", "TaskVerse", "United States"],
+  ["Frontend Engineer", "SMARTFOX", "United States"],
+  ["Junior Web Developer", "RoleTalent Ltd", "Greater Lincoln Area, United Kingdom"],
+  ["Front Office Supervisor", "Amstel Hotel", "Amsterdam"],
+  ["Shift Lead | Wellesley", "Blank Street", "Wellesley, MA"],
+];
+parseChecks.push(["Real layout: 5 cards", real.length === 5]);
+want.forEach(([t, c, l], i) =>
+  parseChecks.push([`Real layout card ${i + 1}: ${t} / ${c} / ${l}`, real[i]?.title === t && real[i]?.company === c && real[i]?.location === l]),
+);
+parseChecks.push(["Real layout: no badge/pay/header text in any field", !real.some((j) => /actively hiring|apply with|\/ (hour|year)|jobs in|<strong/i.test(`${j.title}|${j.company}|${j.location}`))]);
+
+// Title filter: no retail/hospitality roles, tech titles kept
+const job = (title: string) => ({ source: "linkedin_alert" as const, externalId: "x", company: "C", title, url: "", location: "Remote (Worldwide)", workplace: "remote" as const, description: "", postedAt: now });
+const drop = ["Front Office Supervisor", "Front End Supervisor", "(USA) Front End Coach", "Front Desk Manager - Hilton Garden Inn", "Front of House Supervisor", "Shift Lead | Wellesley", "Front End Service Team Supervisor", "Retail Front End Supervisor - Full-Time"];
+const keep = ["Frontend Team Lead", "Front End Engineer - React /Next.js (Remote)", "UI Lead Software Engineer - React / TypeScript", "Support Team Lead (JavaScript)", "Junior Web Developer", "Frontend Developer"];
+for (const t of drop) parseChecks.push([`Filter drops: ${t}`, !titleFilter(job(t)).pass]);
+for (const t of keep) parseChecks.push([`Filter keeps: ${t}`, titleFilter(job(t)).pass]);
+
+// A "Worldwide" location from a remote-anywhere alert counts as remote and passes the location rule
+const ww = parseAlertEmail("linkedin_alert", "Frontend Developer\nAcme\nWorldwide\nView job: https://www.linkedin.com/comm/jobs/view/4000000001/?x=1", now)[0];
+parseChecks.push(["Worldwide alert job counts as remote", ww?.workplace === "remote"]);
+parseChecks.push(["Worldwide alert job passes the location rule", !!ww && locationFilter(ww).pass]);
+const us = parseAlertEmail("linkedin_alert", "Frontend Developer\nAcme\nUnited States\nView job: https://www.linkedin.com/comm/jobs/view/4000000002/?x=1", now)[0];
+parseChecks.push(["'United States' alert job is still dropped (abroad, not marked remote)", !!us && !locationFilter(us).pass]);
+
+// "through to the assessment" is an assessment, not a confirmation
+parseChecks.push([
+  "Assessment: 'you're through to the assessment'",
+  classifyEmail({ fromAddress: "hello@koya.example", subject: "Your Koya application: you're through to the assessment", text: "Thank you for your application. You're through to the assessment stage." }) === "assessment",
+]);
 for (const [name, ok] of parseChecks) {
   if (ok) pass++;
   else fail++;
