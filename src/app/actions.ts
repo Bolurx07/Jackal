@@ -84,6 +84,30 @@ export async function runSearchAction() {
   refresh();
 }
 
+/**
+ * Save the company's application form link for this application. Accepts http(s) links only;
+ * LinkedIn and Indeed links are refused because Jackal never automates those sites.
+ * An empty value clears it.
+ */
+export async function saveApplyUrlAction(formData: FormData) {
+  const id = idFrom(formData, "applicationId");
+  const raw = String(formData.get("applyUrl") ?? "").trim();
+  let value: string | null = null;
+  if (raw) {
+    let u: URL;
+    try {
+      u = new URL(raw);
+    } catch {
+      return; // not a link: ignore (the input also checks this in the browser)
+    }
+    if (!/^https?:$/.test(u.protocol)) return;
+    if (/(^|\.)(linkedin|indeed)\.com$/i.test(u.hostname)) return;
+    value = u.toString();
+  }
+  await db.update(applications).set({ applyUrl: value, updatedAt: new Date() }).where(eq(applications.id, id));
+  refresh();
+}
+
 /** For when you applied but Jackal didn't see the confirmation (or you applied elsewhere). */
 export async function markSubmittedAction(formData: FormData) {
   const id = idFrom(formData, "applicationId");

@@ -256,6 +256,25 @@ export async function showBanner(page: Page, filledCount: number, needsYou: stri
     .catch(() => {});
 }
 
+/** A short note pinned to the page (e.g. when a site blocks automated browsers). */
+export async function showNotice(page: Page, text: string): Promise<void> {
+  await page
+    .evaluate((text) => {
+      document.getElementById("jackal-banner")?.remove();
+      const box = document.createElement("div");
+      box.id = "jackal-banner";
+      box.style.cssText =
+        "position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:360px;background:#111;color:#fff;font:13px/1.4 Arial,sans-serif;padding:12px 14px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.35)";
+      box.textContent = `Jackal: ${text} Open the job posting in your own browser, click Apply, and paste the company's form link into Jackal.`;
+      document.body.appendChild(box);
+    }, text)
+    .catch(() => {});
+}
+
+/** Bot-check / CAPTCHA pages (Cloudflare and similar). Jackal stops at these. */
+export const BOT_CHECK =
+  /performing security verification|verify you are (a )?human|checking (if the site connection is secure|your browser)|are you a robot|press (and|&) hold|unusual traffic from your (computer|network)|enable javascript and cookies to continue/i;
+
 /** Phrases that sites show after a successful application. */
 export const CONFIRMATION =
   /thank(s| you) for (applying|your application|your interest)|application (was |has been |is )?(successfully )?(submitted|received|sent)|we('ve| have) received your application|successfully (submitted|applied)|you('ve| have) (successfully )?applied/i;

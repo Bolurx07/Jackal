@@ -86,6 +86,8 @@ export const applications = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     // Phase 3: assisted submit
+    /** The company's application form link, pasted by you (job boards often block automation). */
+    applyUrl: text("apply_url"),
     lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
     attemptLog: jsonb("attempt_log").$type<string[]>().notNull().default([]),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),

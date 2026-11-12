@@ -33,7 +33,7 @@ async function main() {
   const { cvToHtml, coverLetterToHtml, safeFileName } = await import("../src/lib/documents");
   const { applyUrl } = await import("../src/lib/apply/urls");
   const { FOLLOW_UP_DAYS } = await import("../src/lib/constants");
-  const { fillPage, showBanner, CONFIRMATION } = await import("../src/lib/apply/filler");
+  const { fillPage, showBanner, showNotice, CONFIRMATION, BOT_CHECK } = await import("../src/lib/apply/filler");
 
   const log = async (line: string) => {
     const stamped = `${new Date().toISOString().slice(0, 19).replace("T", " ")} ${line}`;
@@ -71,7 +71,8 @@ async function main() {
     mkdirSync(dir, { recursive: true });
     const resumePath = path.join(dir, `${safeFileName(profile.basics.name, "CV", job.company)}.pdf`);
     const coverLetterPath = path.join(dir, `${safeFileName(profile.basics.name, "Cover Letter", job.company)}.pdf`);
-    const pdfBrowser = await chromium.launch({ channel: "chrome", headless: true });
+    // chromiumSandbox: true keeps Chrome's sandbox on (Playwright otherwise adds --no-sandbox)
+    const pdfBrowser = await chromium.launch({ channel: "chrome", headless: true, chromiumSandbox: true });
     try {
       const p = await pdfBrowser.newPage();
       await p.setContent(cvToHtml(app.tailoredCv), { waitUntil: "load" });
@@ -87,6 +88,7 @@ async function main() {
     const context = await chromium.launchPersistentContext(path.join(process.cwd(), "data", "browser-profile"), {
       channel: "chrome",
       headless: testMode,
+      chromiumSandbox: true, // Chrome's normal security sandbox stays on
       viewport: null,
       args: ["--start-maximized"],
     });
@@ -100,7 +102,8 @@ async function main() {
       resumePath,
       coverLetterPath,
     };
-    let url = applyUrl(job);
+    // A company form link you pasted beats the listing's link (job boards often sit behind bot checks)
+    let url = app.applyUrl ?? applyUrl(job);
     if (practice) {
       const file = path.join(dir, "practice-form.html");
       writeFileSync(
@@ -124,6 +127,7 @@ async function main() {
     const filledByUrl = new Map<string, Set<string>>();
     const baselineConfirm = new Map<string, boolean>();
     const needsYou = new Set<string>();
+    const botChecked = new Set<string>();
     let filledTotal = 0;
     let confirmed: { url: string; text: string } | null = null;
     const deadline = Date.now() + (testMode ? 25_000 : WAIT_MINUTES * 60_000);
@@ -139,6 +143,23 @@ async function main() {
         // Click "Apply on company site" there; the company's form opens and gets filled.
         if (/^https?:\/\/([^/]+\.)?(linkedin|indeed)\.com\//i.test(pageUrl)) continue;
         const bodyText = await p.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+
+        // Bot checks (Cloudflare, CAPTCHAs) block automated browsers. Jackal never tries to get
+        // past them: it says what to do instead and leaves the page alone.
+        const pageTitle = await p.title().catch(() => "");
+        if (BOT_CHECK.test(bodyText) || /^just a moment/i.test(pageTitle)) {
+          const host = new URL(pageUrl).hostname;
+          if (!botChecked.has(host)) {
+            botChecked.add(host);
+            await log(
+              `${host} shows a bot check, which blocks automated browsers. Jackal doesn't try to get past it. ` +
+                `Open the job posting in your own browser, click Apply, then paste the company's application form link into Jackal and try again.`,
+            );
+            if (!testMode) await showNotice(p, `${host} blocks automated browsers with a security check. Jackal won't try to get past it.`);
+          }
+          continue;
+        }
+
         const matches = CONFIRMATION.test(bodyText);
         if (!baselineConfirm.has(pageUrl)) baselineConfirm.set(pageUrl, matches);
 

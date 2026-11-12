@@ -68,7 +68,7 @@ async function main() {
   const coverLetterPath = path.join(dir, "test-cover-letter.pdf");
   const coverLetter = "Dear Example Hiring Team,\n\nThis is a test letter.\n\nBest regards,\nIsrael";
 
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({ channel: "chrome", headless: true, chromiumSandbox: true });
   const context = await browser.newContext();
   await context.addInitScript("window.__name = window.__name || ((f) => f);");
   try {

@@ -15,6 +15,7 @@ import {
   launchApplyAction,
   markSubmittedAction,
   prepareAction,
+  saveApplyUrlAction,
   saveCoverLetterAction,
   setOutcomeAction,
 } from "@/app/actions";
@@ -30,6 +31,14 @@ export default function ApplicationPage({ params }: PageProps<"/applications/[id
     </Suspense>
   );
 }
+
+const SOURCE_NAME: Record<string, string> = {
+  himalayas: "Himalayas",
+  remotive: "Remotive",
+  linkedin_alert: "LinkedIn",
+  indeed_alert: "Indeed",
+  jobberman_alert: "Jobberman",
+};
 
 const EVIDENCE: Record<string, string> = {
   confirmation_page: "Jackal saw the site's confirmation page.",
@@ -56,6 +65,8 @@ async function Review({ params }: { params: PageProps<"/applications/[id]">["par
   const cvs = loadProfile()?.cvs ?? [];
   const addedSkills = app.changes.filter((c) => c.kind === "skill_added").map((c) => c.detail.split(" (")[0]);
   const unanswered = app.answers.filter((a) => a.answer === null);
+  // Listings from job boards and alert emails, not the company's own application form
+  const jobBoard = !["greenhouse", "lever", "ashby"].includes(job.source);
   const emails = await db
     .select()
     .from(emailEvents)
@@ -130,25 +141,69 @@ async function Review({ params }: { params: PageProps<"/applications/[id]">["par
           <Card
             tone="primary"
             title="Ready to submit"
-            description="Jackal opens Chrome on the application form, uploads your tailored CV, fills what it's sure about and lists the rest. It never clicks Submit: you check the form, solve any CAPTCHA and submit."
+            description="Jackal opens Chrome on the application form, uploads your tailored CV, fills what it's sure about and lists the rest. It never clicks Submit, and never tries to get past security checks: you check the form, solve any CAPTCHA yourself and submit."
           >
+            {jobBoard && (
+              <ol className="mb-4 flex flex-col gap-1.5 rounded-lg bg-subtle px-4 py-3 text-[13px]">
+                <li>
+                  <b>1.</b> This job is listed on <b>{SOURCE_NAME[job.source] ?? job.source}</b>, a job board. Job boards often block
+                  automated browsers with a security check, and Jackal won&apos;t try to get past one.{" "}
+                  <a href={job.url} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
+                    Open the posting in your own browser
+                  </a>{" "}
+                  and click <b>Apply</b>. (If the board asks you to sign in, that&apos;s your call.)
+                </li>
+                <li>
+                  <b>2.</b> When you reach the <b>company&apos;s application form</b> (often Greenhouse, Lever, Ashby or Workable), copy its
+                  link and paste it below.
+                </li>
+                <li>
+                  <b>3.</b> Click <b>Open &amp; fill in Chrome</b>. Jackal fills that form; you submit.
+                </li>
+              </ol>
+            )}
+
+            <form action={saveApplyUrlAction} className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input type="hidden" name="applicationId" value={app.id} />
+              <label htmlFor="applyUrl" className="shrink-0 text-[13px] text-muted">
+                Application form link
+              </label>
+              <input
+                id="applyUrl"
+                name="applyUrl"
+                type="url"
+                defaultValue={app.applyUrl ?? ""}
+                placeholder={jobBoard ? "https://… (the company's form, not the job board)" : applyUrl(job)}
+                className={cx(inputClass, "h-9 py-0")}
+              />
+              <SubmitButton className={buttonClass("secondary")} pendingText="Saving…">
+                Save link
+              </SubmitButton>
+            </form>
+
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <form action={launchApplyAction}>
                 <input type="hidden" name="applicationId" value={app.id} />
-                <SubmitButton className={cx(buttonClass("primary"), "w-full sm:w-auto")} pendingText="Opening Chrome…">
+                <SubmitButton
+                  className={cx(buttonClass(jobBoard && !app.applyUrl ? "secondary" : "primary"), "w-full sm:w-auto")}
+                  pendingText="Opening Chrome…"
+                >
                   <Globe className="size-4" aria-hidden /> Open &amp; fill in Chrome
                 </SubmitButton>
               </form>
-              <a href={applyUrl(job)} target="_blank" rel="noreferrer" className={buttonClass("secondary")}>
-                Open the form myself
-              </a>
+              {!jobBoard && (
+                <a href={app.applyUrl ?? applyUrl(job)} target="_blank" rel="noreferrer" className={buttonClass("secondary")}>
+                  Open the form myself
+                </a>
+              )}
               <form action={markSubmittedAction}>
                 <input type="hidden" name="applicationId" value={app.id} />
                 <SubmitButton className={cx(buttonClass("ghost"), "w-full sm:w-auto")}>I submitted it myself</SubmitButton>
               </form>
             </div>
             <p className="mt-3 text-xs text-muted">
-              Chrome opens on the computer running Jackal.
+              Chrome opens on the computer running Jackal
+              {app.applyUrl ? ", on the form link above" : jobBoard ? ", on the job board page (which may block it)" : ""}.
               {app.lastAttemptAt && ` Last opened ${timeAgo(app.lastAttemptAt, now)}; reload this page to see progress.`}
             </p>
             <AttemptLog log={app.attemptLog} open />
